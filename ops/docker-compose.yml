@@ -143,7 +143,3 @@ services:
       - ui
     ports:
       - "80:80"
-
-networks:
-  disco_net:
-    driver: bridge
