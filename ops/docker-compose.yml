@@ -1,0 +1,145 @@
+version: "3.9"
+
+networks:
+  disco_net:
+    driver: bridge
+
+volumes:
+  minio_data:
+  postgres_data:
+  weaviate_data:
+  redpanda_data:
+  ollama_data:
+  caddy_data:
+
+services:
+  minio:
+    image: minio/minio:RELEASE.2025-06-28T00-00-00Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio_data:/data
+    networks:
+      - disco_net
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: disco
+      POSTGRES_PASSWORD: discopass
+      POSTGRES_DB: disco
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    networks:
+      - disco_net
+    ports:
+      - "5432:5432"
+
+  weaviate:
+    image: semitechnologies/weaviate:1.24
+    environment:
+      QUERY_DEFAULTS_LIMIT: 25
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'
+      PERSISTENCE_DATA_PATH: /var/lib/weaviate
+    volumes:
+      - weaviate_data:/var/lib/weaviate
+      - ./weaviate_schema.json:/app/weaviate_schema.json
+    networks:
+      - disco_net
+    ports:
+      - "8080:8080"
+
+  redpanda:
+    image: docker.redpanda.com/vectorized/redpanda:v24.1.1
+    command:
+      - redpanda start --smp 1 --memory 512M --reserve-memory 0M --overprovisioned --node-id 0 --kafka-addr PLAINTEXT://0.0.0.0:9092 --check=false
+    volumes:
+      - redpanda_data:/var/lib/redpanda/data
+    networks:
+      - disco_net
+    ports:
+      - "9092:9092"
+
+  prefect-server:
+    image: ghcr.io/prefecthq/prefect:2.16-python3.12
+    command: prefect server start --host 0.0.0.0
+    networks:
+      - disco_net
+    ports:
+      - "4200:4200"
+
+  prefect-agent:
+    image: ghcr.io/prefecthq/prefect:2.16-python3.12
+    command: prefect agent start -q default
+    networks:
+      - disco_net
+    depends_on:
+      - prefect-server
+
+  ollama:
+    image: ollama/ollama:0.1.31
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - disco_net
+    ports:
+      - "11434:11434"
+
+  api:
+    build: ../api
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT}
+      WEAVIATE_URL: ${WEAVIATE_URL}
+      KAFKA_BOOTSTRAP: ${KAFKA_BOOTSTRAP}
+      OLLAMA_URL: ${OLLAMA_URL}
+      JWT_SECRET: ${JWT_SECRET}
+    networks:
+      - disco_net
+    depends_on:
+      - postgres
+      - minio
+      - weaviate
+      - redpanda
+      - ollama
+    ports:
+      - "8000:8000"
+
+  ingest:
+    build: ../ingest
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT}
+      WEAVIATE_URL: ${WEAVIATE_URL}
+      KAFKA_BOOTSTRAP: ${KAFKA_BOOTSTRAP}
+    networks:
+      - disco_net
+    depends_on:
+      - api
+
+  ui:
+    build: ../ui
+    networks:
+      - disco_net
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
+
+  caddy:
+    image: caddy:2.8
+    volumes:
+      - caddy_data:/data
+      - ../Caddyfile:/etc/caddy/Caddyfile
+    networks:
+      - disco_net
+    depends_on:
+      - ui
+    ports:
+      - "80:80"

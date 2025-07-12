@@ -1,0 +1,17 @@
+name: CI
+on: [push]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Docker Compose
+        run: docker compose version
+      - name: Build and Test
+        run: |
+          docker compose -f ops/docker-compose.yml build --no-cache
+          docker compose -f ops/docker-compose.yml up -d
+          sleep 30
+          docker compose -f ops/docker-compose.yml exec api pytest /app/.. -q
+          docker compose -f ops/docker-compose.yml exec ui npm test -- -c ui/playwright.config.js || true
