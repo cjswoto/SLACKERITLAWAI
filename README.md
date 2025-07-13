@@ -1,22 +1,27 @@
-# Disco E-Discovery Platform
+# Slacker AI Suite
+
+This project provides a lightweight offline-first AI toolkit built with Python.
+It includes a simple knowledge base with FAISS, integration with a local
+Ollama LLM server, PDF utilities, and a FastAPI backend for interaction.
 
 ## Setup
 
+Install dependencies and run the API server:
+
 ```bash
-docker compose -f ops/docker-compose.yml build --no-cache
-docker compose -f ops/docker-compose.yml up -d
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn api.main:app --reload
 ```
 
-Access API at `http://localhost:8000/health` and UI at `http://localhost:3000`.
+The API exposes endpoints for chatting with the model and managing the
+knowledge base. Health check is available at `http://localhost:8000/health`.
 
-### Tests
+## Tests
 
-Run:
+Run the automated tests with:
 
 ```bash
 pytest
 ```
-
-### Rollback
-
-Use `docker compose -f ops/docker-compose.yml down -v` to stop and remove containers and volumes.
