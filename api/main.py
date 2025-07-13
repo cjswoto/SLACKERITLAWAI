@@ -1,22 +1,14 @@
-import os
-import uuid
-import jwt
-from fastapi import FastAPI, File, UploadFile, Depends, HTTPException
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from pathlib import Path
+from fastapi import FastAPI
 from pydantic import BaseModel
 
-SECRET = os.getenv("JWT_SECRET", "secret")
-ALGORITHM = "HS256"  # using HS for simplicity
+from slacker_ai_suite.chat_manager import ConversationManager
+from slacker_ai_suite.knowledge_base import KnowledgeBase
 
-app = FastAPI(title="Disco API")
-security = HTTPBearer()
+app = FastAPI(title="Slacker AI Suite")
 
-
-def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    try:
-        jwt.decode(credentials.credentials, SECRET, algorithms=[ALGORITHM])
-    except jwt.PyJWTError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+kb = KnowledgeBase(Path("kb_store"))
+chat_manager = ConversationManager(kb=kb)
 
 
 @app.get("/health")
@@ -24,62 +16,32 @@ def health():
     return {"status": "ok"}
 
 
-class UploadResponse(BaseModel):
-    flow_id: str
-
-
-@app.post("/upload/pst", response_model=UploadResponse)
-def upload_pst(file: UploadFile = File(...), token: None = Depends(verify_token)):
-    flow_id = str(uuid.uuid4())
-    # File processing would occur here
-    return {"flow_id": flow_id}
-
-
-@app.get("/search")
-def search(q: str, top_k: int = 5, token: None = Depends(verify_token)):
-    return {"results": []}
-
-
-@app.get("/clusters")
-def clusters(token: None = Depends(verify_token)):
-    return {"clusters": []}
-
-
-@app.get("/clusters/{cluster_id}")
-def cluster_detail(cluster_id: str, token: None = Depends(verify_token)):
-    return {"id": cluster_id, "documents": []}
-
-
-@app.get("/entities")
-def entities(token: None = Depends(verify_token)):
-    return {"entities": []}
-
-
-@app.get("/graph")
-def graph(token: None = Depends(verify_token)):
-    return {"nodes": [], "edges": []}
-
-
-@app.get("/timeline")
-def timeline(token: None = Depends(verify_token)):
-    return {"timeline": []}
-
-
-@app.get("/alerts")
-def alerts(token: None = Depends(verify_token)):
-    return {"alerts": []}
-
-
-@app.post("/review/feedback")
-def review_feedback(data: dict, token: None = Depends(verify_token)):
-    return {"status": "received"}
+class ChatRequest(BaseModel):
+    session_id: str
+    message: str
 
 
 @app.post("/chat")
-def chat(prompt: dict, token: None = Depends(verify_token)):
-    return {"response": "ok"}
+def chat(req: ChatRequest):
+    response = chat_manager.chat(req.session_id, req.message)
+    return {"response": response}
 
 
-@app.post("/review/tag")
-def review_tag(tag: dict, token: None = Depends(verify_token)):
-    return {"status": "tagged"}
+class KBAddRequest(BaseModel):
+    texts: list[str]
+
+
+@app.post("/kb/add")
+def kb_add(req: KBAddRequest):
+    kb.add_texts(req.texts)
+    return {"count": len(req.texts)}
+
+
+class KBQueryRequest(BaseModel):
+    query: str
+    top_k: int = 3
+
+
+@app.post("/kb/search")
+def kb_search(req: KBQueryRequest):
+    return {"results": kb.search(req.query, req.top_k)}
